@@ -132,7 +132,7 @@ int main(void)
             int socket = mdm.socketSocket(MDMParser::IPPROTO_TCP);
             if(socket>=0)
 	    {
-                mdm.socketSetBlocking(socket, 1000);
+//                mdm.socketSetBlocking(socket, 1000);
   	        if (mdm.socketConnect(socket, hostipstr, port))
 	        {
 		    formatSocketData(buf, "GET", "gpsdata", NULL);
