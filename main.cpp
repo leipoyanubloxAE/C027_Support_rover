@@ -141,7 +141,15 @@ int main(void)
 	            ret = mdm.socketRecv(socket, buf, sizeof(buf)-1);
 	            if(ret>0) 
 		    {
-			printf("gpsdata: (%s)\n", strstr(buf, "\r\n\r\n")+4);
+		        printf("gpsdata: (%s)\n", strstr(buf, "\r\n\r\n")+4);
+		    }
+		    while(ret>0) 
+		    {
+	                ret = mdm.socketRecv(socket, buf, sizeof(buf)-1);
+	                if(ret>0) 
+		        {
+			    printf("continued: (%s)\n", buf);
+		        }
 		    }
 
 	            mdm.socketClose(socket);
