@@ -31,16 +31,13 @@
 #define PASSWORD    NULL 
 //------------------------------------------------------------------------------------
  
-//#define CELLOCATE
-DigitalOut led1(LED1);
+#define BUFSIZE 512
 
 int cbString(int type, const char* buf, int len, char* str)
 {
-    //printf("--> buf: %s <--\n", buf);
     if (sscanf(buf, "\r\n%[^\r\n]s\r\n", str) == 1) {
             /*nothing*/;
     }
-    //printf("--> str: %s <--\n", str);
     return 0;
 }
 
@@ -53,32 +50,30 @@ int formatSocketData(char* buf, char* method, char* name, char* data)
         sprintf(buf, "%s\r\n\r\n", header);
     else
         sprintf(buf, "%s\r\nContent-Length: %d\r\n\r\n%s\r\n", header, strlen(data), data);
-    //printf("buf: (%s)\n", buf);
 }
 
 int main(void)
 {
     int ret;
-#ifdef LARGE_DATA
-    char buf[2048] = "";
-#else
-    char buf[512] = "";
-#endif
+    char* buf=NULL;
     int port = 8007;
-    char gpsdata[256];
-    char response[512];
+    char* gpsdata = NULL;
     const char* host = "ubloxsingapore.ddns.net";
     MDMParser::IP hostip;
     char hostipstr[16];
+    char* pos;
  
     printf("C027_Support Rover\n");
+    gpsdata = (char*) malloc(sizeof(char) * BUFSIZE);
+    buf = (char*) malloc(sizeof(char) * BUFSIZE);
+    if((gpsdata==NULL)||(buf==NULL))
+    {
+        printf("Failed to allocate memory\n");
+        return 0;
+    }
 
     // Create the GPS object
-#if 1   // use GPSI2C class
     GPSI2C gps;
-#else   // or GPSSerial class 
-    GPSSerial gps; 
-#endif
     // Create the modem object
     MDMSerial mdm; // use mdm(D1,D0) if you connect the cellular shield to a C027
     //mdm.setDebug(4); // enable this for debugging issues 
@@ -95,133 +90,85 @@ int main(void)
         mdm.dumpNetStatus(&netStatus);
     }
 
-    MDMParser::IP ip = mdm.join(APN,USERNAME,PASSWORD);
-    if (ip == NOIP)
-        printf("Not able to join network");
-    else
-    {
-	hostip = mdm.gethostbyname(host);
-	sprintf(hostipstr, IPSTR "\n", IPNUM(hostip));
-	printf("server IP: %s\n", hostipstr);
-	printf("Make a Http Post Request to post base IP address\r\n");
-        int socket = mdm.socketSocket(MDMParser::IPPROTO_TCP);
-        if(socket>=0)
-        {
-//            mdm.socketSetBlocking(socket, 1000);
+    if(gps.init()) {
+        printf("GPS detected\n");
+    } else {
+        printf("GPS detected\n");
+    }
 
-	    if (mdm.socketConnect(socket, hostipstr, port))
-	    {
-		char ipinfo[100];
-		//sprintf(ipinfo, "{IPServer: " IPSTR ", IPClient: 0, read: 0}", IPNUM(ip));
-		sprintf(ipinfo, IPSTR, IPNUM(ip));
-		formatSocketData(buf, "POST", "iprover", ipinfo);
-		mdm.socketSend(socket, buf, strlen(buf));
-#if 0
-		ret = mdm.socketRecv(socket, response, sizeof(response)-1);
-		if(ret>0)
-		    printf("Socket Recv \"%*s\"\r\n", ret, response);
-#endif
-		mdm.socketClose(socket);
-	    }
-	    mdm.socketFree(socket);
-        }
-
-	printf("Make a Http Post Request to post gpsdata\r\n");
-        for(int count=0; count<7200; count++) {
-            printf("Get GPS data %d\r\n", count);
+    if( mdmOk) {
+    	MDMParser::IP ip = mdm.join(APN,USERNAME,PASSWORD);
+    	if (ip == NOIP)
+            printf("Not able to join network");
+    	else
+    	{
+	    hostip = mdm.gethostbyname(host);
+	    sprintf(hostipstr, IPSTR "\n", IPNUM(hostip));
+	    printf("server IP: %s\n", hostipstr);
+	
+	    printf("Make a Http Post Request to post base IP address\r\n");
             int socket = mdm.socketSocket(MDMParser::IPPROTO_TCP);
             if(socket>=0)
-	    {
-//                mdm.socketSetBlocking(socket, 1000);
-  	        if (mdm.socketConnect(socket, hostipstr, port))
-	        {
-		    formatSocketData(buf, "GET", "gpsdata", NULL);
-	            mdm.socketSend(socket, buf, strlen(buf));
-
-	            ret = mdm.socketRecv(socket, buf, sizeof(buf)-1);
-	            if(ret>0) 
-		    {
-		        printf("gpsdata: (%s)\n", strstr(buf, "\r\n\r\n")+4);
-		    }
-		    while(ret>0) 
-		    {
-	                ret = mdm.socketRecv(socket, buf, sizeof(buf)-1);
-	                if(ret>0) 
-		        {
-			    printf("continued: (%s)\n", buf);
-		        }
-		    }
-
-	            mdm.socketClose(socket);
-	        }
-
-	        mdm.socketFree(socket);
-	    }
-            //Thread::wait(1000);
-        }
-        
-   
-    }
-    mdm.disconnect();
-
-
-    // Blocking code
-    while (true) {
-	led1 = !led1;
-        
-        mdm.sendFormated("AT+COPS?\r\n");
-        mdm.waitFinalResp(cbString,buf, 60*1000);
-        printf("buf is (%s)\n", buf);
-	Thread::wait(500);
-    }
-
-    printf("SMS and GPS Loop\r\n");
-    char link[128] = "";
-    const int wait = 100;
-    bool abort = false;
-
-    //DigitalOut led(LED1);
-    while (!abort) {
-    //    led = !led;
-        while ((ret = gps.getMessage(buf, sizeof(buf))) > 0)
-        {
-            int len = LENGTH(ret);
-            //printf("NMEA: %.*s\r\n", len-2, msg); 
-            if ((PROTOCOL(ret) == GPSParser::NMEA) && (len > 6))
             {
-                // talker is $GA=Galileo $GB=Beidou $GL=Glonass $GN=Combined $GP=GPS
-                if ((buf[0] == '$') || buf[1] == 'G') {
-                    #define _CHECK_TALKER(s) ((buf[3] == s[0]) && (buf[4] == s[1]) && (buf[5] == s[2]))
-                    if (_CHECK_TALKER("GLL")) {
-                        double la = 0, lo = 0;
-                        char ch;
-                        if (gps.getNmeaAngle(1,buf,len,la) && 
-                            gps.getNmeaAngle(3,buf,len,lo) && 
-                            gps.getNmeaItem(6,buf,len,ch) && ch == 'A')
-                        {
-                            printf("GPS Location: %.5f %.5f\r\n", la, lo); 
-                            sprintf(link, "I am here!\n"
-                                          "https://maps.google.com/?q=%.5f,%.5f", la, lo); 
-                        }
-                    } else if (_CHECK_TALKER("GGA") || _CHECK_TALKER("GNS") ) {
-                        double a = 0; 
-                        if (gps.getNmeaItem(9,buf,len,a)) // altitude msl [m]
-                            printf("GPS Altitude: %.1f\r\n", a); 
-                    } else if (_CHECK_TALKER("VTG")) {
-                        double s = 0; 
-                        if (gps.getNmeaItem(7,buf,len,s)) // speed [km/h]
-                            printf("GPS Speed: %.1f\r\n", s); 
-                    }
-                }
+//            mdm.socketSetBlocking(socket, 1000);
+
+	    	if (mdm.socketConnect(socket, hostipstr, port))
+	    	{
+		    char ipinfo[20];
+		    sprintf(ipinfo, IPSTR, IPNUM(ip));
+		    formatSocketData(buf, "POST", "iprover", ipinfo);
+		    mdm.socketSend(socket, buf, strlen(buf));
+		    mdm.socketClose(socket);
+	    	}
+	    	mdm.socketFree(socket);
+            }
+
+            while(1) {
+            	int socket = mdm.socketSocket(MDMParser::IPPROTO_TCP);
+            	if(socket>=0)
+	    	{
+//                mdm.socketSetBlocking(socket, 1000);
+  	            if (mdm.socketConnect(socket, hostipstr, port))
+	            {
+		        formatSocketData(buf, "GET", "gpsdata", NULL);
+	                mdm.socketSend(socket, buf, strlen(buf));
+
+		        memset(gpsdata, 0, sizeof(gpsdata));
+	                ret = mdm.socketRecv(socket, gpsdata, BUFSIZE);
+	                if(ret>0) 
+		    	{
+			    pos = strstr(gpsdata, "\r\n\r\n")+4;
+			    if(strlen(pos) > 0)
+			    {
+		                printf("gpsdata: (%s) sizeof gpsdata: %d\n", pos, strlen(pos));
+	  		    	gps.send(pos, strlen(pos));
+
+				/* If there is content, it is possible there are more data from the server than the buffer. 
+				   In this case, we need to continue to receive from the socket
+				*/
+		            	while(ret>0) 
+		            	{
+	                    	    ret = mdm.socketRecv(socket, gpsdata, BUFSIZE);
+	                    	    if(ret>0) 
+		            	    {
+			    	    	//printf("continued: (%s) sizeof gpsdata: %d\n", gpsdata, strlen(gpsdata));
+			    	    	if(strlen(gpsdata)>0)
+			            	    gps.send(gpsdata, strlen(gpsdata));
+		                    }
+		            	}
+			    }
+		    	}
+	                mdm.socketClose(socket);
+	            }
+
+	            mdm.socketFree(socket);
+	        }
+                //Thread::wait(1000);
             }
         }
-
-#ifdef RTOS_H
-        Thread::wait(wait);
-#else
-        ::wait_ms(wait);
-#endif
+        mdm.disconnect();
     }
+
     gps.powerOff();
     mdm.powerOff();
     return 0;
