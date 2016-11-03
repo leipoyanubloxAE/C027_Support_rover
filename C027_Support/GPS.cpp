@@ -336,7 +336,7 @@ int GPSI2C::send(const char* buf, int len)
     if (len) 
     {
         if (!I2C::write(_i2cAdr,&REGSTREAM,sizeof(REGSTREAM),true))
-            sent = send(buf, len);
+            sent = _send(buf, len);
         stop();
     }
     return sent;
