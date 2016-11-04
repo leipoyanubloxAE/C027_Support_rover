@@ -62,6 +62,7 @@ int main(void)
     MDMParser::IP hostip;
     char hostipstr[16];
     char* pos;
+    int gpsDataLen=0;
  
     printf("C027_Support Rover\n");
     gpsdata = (char*) malloc(sizeof(char) * BUFSIZE);
@@ -138,10 +139,11 @@ int main(void)
 	                if(ret>0) 
 		    	{
 			    pos = strstr(gpsdata, "\r\n\r\n")+4;
-			    if(strlen(pos) > 0)
+			    gpsDataLen = ret - (pos-gpsdata);
+			    if(gpsDataLen > 0)
 			    {
-		                printf("gpsdata: (%s) sizeof gpsdata: %d\n", pos, strlen(pos));
-	  		    	gps.send(pos, strlen(pos));
+		                printf("gpsdata: sizeof gpsdata: %d\n", gpsDataLen);
+	  		    	gps.send(pos, gpsDataLen);
 
 				/* If there is content, it is possible there are more data from the server than the buffer. 
 				   In this case, we need to continue to receive from the socket
@@ -152,8 +154,7 @@ int main(void)
 	                    	    if(ret>0) 
 		            	    {
 			    	    	//printf("continued: (%s) sizeof gpsdata: %d\n", gpsdata, strlen(gpsdata));
-			    	    	if(strlen(gpsdata)>0)
-			            	    gps.send(gpsdata, strlen(gpsdata));
+			            	gps.send(gpsdata, ret);
 		                    }
 		            	}
 			    }
